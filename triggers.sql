@@ -178,21 +178,32 @@ create table parent(
    a text primary key
 );
 
-CREATE TRIGGER check_pk
-    BEFORE INSERT or update ON parent
-    FOR EACH ROW
-    EXECUTE PROCEDURE check_pk();
+create trigger check_pk
+    before insert or update on parent
+    for each row execute procedure check_pk();
 
 --
 --
 --
 
-create table child(
+create table childb(
    b text,
    primary key(a, b)
 ) inherits(parent);
 
-CREATE TRIGGER check_pk
-    BEFORE INSERT or update ON child
-    FOR EACH ROW
-    EXECUTE PROCEDURE check_pk();
+create trigger check_pk
+    before insert or update on childb
+    for each row execute procedure check_pk();
+
+--
+--
+--
+
+create table childc(
+   c text,
+   primary key(a, c)
+) inherits(parent);
+
+create trigger check_pk
+    before insert or update on childc
+    for each row execute procedure check_pk();
