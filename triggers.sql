@@ -4,57 +4,61 @@ create language plpythonu;
 --
 --
 
-CREATE FUNCTION check_pk() RETURNS trigger AS $$
+CREATE FUNCTION check_pk()
+    RETURNS trigger
+AS $$
+from datetime import datetime
+begin = datetime.now()
+from sys import stderr
+
 oid = TD['relid']
 GD['td'] = TD
-plpy.execute("SELECT check_pk_oid('{}', '{}')".format(oid, oid))
-$$
-LANGUAGE plpythonu;
+ok = plpy.execute(
+	"SELECT check_pk_oid({})".format(oid))[0]['check_pk_oid']
+stderr.write("check_pk duration: {}\n".format(datetime.now() - begin))
+if not ok:
+    return 'SKIP'
+$$ LANGUAGE plpythonu;
 
 --
 --
 --
 
-CREATE FUNCTION check_pk_oid(integer, integer) RETURNS text AS $$
-"""
-recherche d''éventuelles correspondances dans l'arbre d''héritage.
-Si une correspondance est trouvée, déclenche une erreur.
-Sinon retourne l'uid correspondants à la concaténation des champs de la clef
-primaire et du fqtn à gauche et à droite deux fois signés sha.
-"""
-import sys
+CREATE FUNCTION check_pk_oid(integer)
+  returns boolean
+AS $$
+"""Return False if the key is found in any of the parents."""
+from datetime import datetime
+begin = datetime.now()
+from sys import stderr
 from psycopg2.extensions import adapt
 
-new_uid = ''
-#inhf = False
-oid_orig = args[0]
-oid = args[1]
-sys.stderr.write("{} check_pk_oid({}, {})\n".format(
-    8*'=', oid_orig, oid))
+oid = args[0]
+stderr.write("{} check_pk_oid({})\n".format(8*'=', oid))
 TD = GD['td']
-sys.stderr.write("GD['td'] = {}\n".format(TD))
+stderr.write("GD['td'] = {}\n".format(TD))
 parent_oid = plpy.execute(
     "SELECT get_inhparent('{}')".format(oid))[0]['get_inhparent']
-sys.stderr.write("oid du parent {}\n".format(parent_oid))
+stderr.write("oid du parent {}\n".format(parent_oid))
 if parent_oid:
-   # si la table hérite d''une autre table, on recherche l''existence
-   # d''un tuple correspondant dans la table mère
-   query = ("SELECT check_pk_oid('{}', '{}')".format(oid_orig, parent_oid))
-   sys.stderr.write("check uid request: {}\n".format(query))
-   rec = plpy.execute(query)
-   new_uid = rec[0]['check_pk_oid']
-# récupration du fqtn et des champs de la clef primaire
+   # recurse on parent_oid
+   query = ("SELECT check_pk_oid({})".format(parent_oid))
+   stderr.write("check uid request: {}\n".format(query))
+   return plpy.execute(query)[0]['check_pk_oid']
+# Get the FQTN and the field names of the primary key
 pk_infos = plpy.execute(
    "SELECT get_pk_fields({})".format(oid))[0]['get_pk_fields']
-fqtn, pk_fieldnames = pk_infos.split(':')
-clause = []
+fqtn, pk_fieldnames = pk_infos[0], pk_infos[1:]
 if not pk_fieldnames:
-   return new_uid
-pklist = pk_fieldnames.split(',')
+   stderr.write(
+       "check_pk_oid duration ok 1: {}\n".format(datetime.now() - begin))
+   return True
 
-# construction de la clause pour la requête SELECT
-l_pk_val = []
-for field in pklist:
+# Clause for the SELECT request
+fields = []
+clause = []
+for field in pk_fieldnames:
+   fields.append(field)
    if TD['new'][field] == 0:
      valeur = 0
    else:
@@ -63,67 +67,52 @@ for field in pklist:
    clause.append("{} = {}".format(field, str(valeur)))
 
 # construction de la requête d''extraction
-req = "SELECT * FROM {} WHERE {} limit 1".format(fqtn, ' and '.join(clause))
-sys.stderr.write("check_pk_oid: {}\n".format(req))
+req = "SELECT {} FROM {} WHERE {} limit 1".format(
+	', '.join(fields), fqtn, ' and '.join(clause))
+stderr.write("check_pk_oid: {}\n".format(req))
 if len(plpy.execute(req)) == 1:
-    plpy.error("clef dupliquee")
+    stderr.write("CLEF DUPLIQUEE\n")
+    stderr.write("check_pk_oid duration: {}\n".format(datetime.now() - begin))
+    return False
 
-return 'ok'
-$$
-LANGUAGE plpythonu;
-
---
---
---
-
-CREATE FUNCTION get_fqtn(integer) RETURNS text AS $$
-import sys
-oid = args[0]
-sys.stderr.write("{} get_inhparent({})\n".format(8*'=', oid))
-rec = plpy.execute(
-   """SELECT schemaname, relname      
-      FROM pg_catalog.pg_stat_user_tables
-      WHERE relid = '{}'
-   """.format(oid))
-return rec[0]['schemaname'] + "." + rec[0]['relname']
-$$
-LANGUAGE plpythonu;
+stderr.write("check_pk_oid duration ok 2: {}\n".format(datetime.now() - begin))
+return True
+$$ LANGUAGE plpythonu;
 
 --
 --
 --
 
-CREATE FUNCTION get_inhparent(integer) RETURNS integer AS $$
-import sys
+CREATE FUNCTION get_inhparent(integer)
+    RETURNS integer
+AS $$
+from sys import stderr
 relid = args[0]
-sys.stderr.write("{} get_inhparent({})\n".format(8*'=', relid))
+stderr.write("{} get_inhparent({})\n".format(8*'=', relid))
 query = (
-    "SELECT inhparent FROM pg_catalog.pg_inherits WHERE inhrelid = '{}'".format(
+    "SELECT inhparent FROM pg_catalog.pg_inherits WHERE inhrelid = {}".format(
     relid))
-sys.stderr.write('get_inhparent: {}\n'.format(query))
+stderr.write('get_inhparent: {}\n'.format(query))
 rec = plpy.execute(query)
 try:
    return rec[0]['inhparent']
 except:
    return 0
-$$
-LANGUAGE plpythonu;
+$$ LANGUAGE plpythonu;
 
 --
 --
 --
 
-CREATE FUNCTION get_pk_fields(oid) RETURNS text AS $$
+CREATE FUNCTION get_pk_fields(oid)
+    RETURNS varchar[]
+AS $$
 """
-retourne les noms des champs constituant la clef primaire de la table
-dont l'oid est passé en référence. Les champs sont ordonnés par "attnum"
-(le numéro de l'attribut ou numéro du champ dans la table). Attention, en
-cas d'altération de la table (touchant un ou plusieur de ces champs), 
-l'ordre peut être modifié.
+Return the field names in the primary key
 """
-import sys
+from sys import stderr
 oid = args[0]
-sys.stderr.write("{} get_pk_fields({})\n".format(8*'=', oid))
+stderr.write("{} get_pk_fields({})\n".format(8*'=', oid))
 # rec_st : record contenant schemaname et relname
 rec_st = plpy.execute(
    """SELECT schemaname, relname 
@@ -131,40 +120,55 @@ rec_st = plpy.execute(
       WHERE relid = {}""".format(oid))
 schemaname = rec_st[0]['schemaname']
 relname = rec_st[0]['relname']
-rec_pk_fieldnames = plpy.execute(
-   """SELECT pa.attname 
-      FROM pg_attribute pa, pg_type pt 
-      WHERE pa.attrelid IN (
-        SELECT oid 
-        FROM pg_class 
-        WHERE relname = '{}' 
-        AND relnamespace = (
-          SELECT oid 
-          FROM pg_catalog.pg_namespace 
-          WHERE nspname = '{}')
-       ) 
-        AND pa.atttypid = pt.oid
-        AND pa.attnum = ANY (
-          ARRAY [ (
-          SELECT conkey
-          FROM pg_constraint pconst 
-          WHERE contype = 'p'
-          AND conrelid = (
-            SELECT relid
-            FROM pg_catalog.pg_stat_all_tables
-            WHERE schemaname = '{}'
-            AND relname = '{}')) ]
-       )""".format(relname, schemaname, schemaname, relname))
-l_fieldnames = []
-for rec in rec_pk_fieldnames:
-  l_fieldnames.insert(0, rec['attname'])
+l_fieldnames = plpy.execute(
+   """
+SELECT
+    a.attrelid AS tableid,
+    c.relkind AS tablekind,
+    n.nspname::varchar AS schemaname,
+    c.relname::varchar AS relationname,
+	array_agg(distinct i.inhparent) as parent,
+    array_agg(a.attname::varchar) AS fieldnames,
+	array_agg(a.attnum) as attnums,
+    array_agg(a.attislocal) AS local,
+    cn_pk.contype AS pkey
+FROM
+    pg_class c -- table
+    LEFT JOIN pg_namespace n ON
+    c.relname = '{}' and
+    n.oid = c.relnamespace and
+    n.nspname = '{}'
+    LEFT JOIN pg_inherits i ON
+    i.inhrelid = c.oid
+    LEFT JOIN pg_attribute a ON
+    a.attrelid = c.oid
+    JOIN pg_type pt ON
+    a.atttypid = pt.oid
+--    LEFT JOIN pg_constraint cn_uniq ON
+--    cn_uniq.contype = 'u' AND
+--    cn_uniq.conrelid = a.attrelid AND
+--    a.attnum = ANY( cn_uniq.conkey )
+    JOIN pg_constraint cn_pk ON
+    cn_pk.contype = 'p' AND
+    cn_pk.conrelid = a.attrelid AND
+    a.attnum = ANY( cn_pk.conkey )
+WHERE
+    n.nspname <> 'pg_catalog'::name AND
+    n.nspname <> 'information_schema'::name AND
+    ( c.relkind = 'r'::"char" )
+GROUP BY
+    a.attrelid,
+    c.relkind,
+    n.nspname,
+    c.relname,
+    cn_pk.contype""".format(relname, schemaname))[0]['fieldnames']
+fqtn = "{}.{}".format(schemaname, relname)
+return [fqtn] + l_fieldnames
 fieldnames = ','.join(l_fieldnames)
-fqtn = schemaname + '.' + relname
 resultat = fqtn + ":" + fieldnames
-sys.stderr.write("{}\n".format(resultat))
+stderr.write("{}\n".format(resultat))
 return resultat
-$$
-LANGUAGE plpythonu;
+$$ LANGUAGE plpythonu;
 
 ------
 ------ usage
