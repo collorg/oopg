@@ -38,7 +38,7 @@ stderr.write("{} check_pk_oid({})\n".format(8*'=', oid))
 TD = GD['td']
 stderr.write("GD['td'] = {}\n".format(TD))
 parent_oids = plpy.execute(
-    "SELECT get_inhparent('{}')".format(oid))[0]['get_inhparent']
+    "SELECT get_parents('{}')".format(oid))[0]['get_parents']
 stderr.write("oid du parent {}\n".format(parent_oids))
 for parent_oid in parent_oids:
    # recurse on parent_oid
@@ -59,6 +59,9 @@ if not pk_fieldnames:
 fields = []
 clause = []
 for field in pk_fieldnames:
+   if GD['td']['old'] is not None:
+       if GD['td']['old'][field] == GD['td']['new'][field]:
+           continue
    fields.append(field)
    if TD['new'][field] == 0:
      valeur = 0
@@ -67,12 +70,15 @@ for field in pk_fieldnames:
      valeur = adapt(valeur)
    clause.append("{} = {}".format(field, str(valeur)))
 
+if not clause:
+    stderr.write("NOTHING CHANGED!\n")
+    return True
 # construction de la requête d''extraction
 req = "SELECT {} FROM {} WHERE {} limit 1".format(
 	', '.join(fields), fqtn, ' and '.join(clause))
 stderr.write("check_pk_oid: {}\n".format(req))
 if len(plpy.execute(req)) == 1:
-    stderr.write("CLEF DUPLIQUEE\n")
+    stderr.write("DUPLICATE KEY\n")
     stderr.write("check_pk_oid duration: {}\n".format(datetime.now() - begin))
     return False
 
@@ -84,20 +90,23 @@ $$ LANGUAGE plpythonu;
 --
 --
 
-CREATE FUNCTION get_inhparent(integer)
+CREATE FUNCTION get_parents(integer)
     RETURNS integer[]
 AS $$
+from datetime import datetime
+begin = datetime.now()
 from sys import stderr
 relid = args[0]
-stderr.write("{} get_inhparent({})\n".format(8*'=', relid))
+stderr.write("{} get_parents({})\n".format(8*'=', relid))
 query = (
     "SELECT inhparent FROM pg_catalog.pg_inherits WHERE inhrelid = {}".format(
     relid))
-stderr.write('get_inhparent: {}\n'.format(query))
+stderr.write('get_parents: {}\n'.format(query))
 rec = plpy.execute(query)
 res = []
 if len(rec):
   res = [elt['inhparent'] for elt in rec]
+stderr.write("get_parents duration: {}\n".format(datetime.now() - begin))
 return res
 $$ LANGUAGE plpythonu;
 
@@ -111,6 +120,8 @@ AS $$
 """
 Return the field names in the primary key
 """
+from datetime import datetime
+begin = datetime.now()
 from sys import stderr
 oid = args[0]
 stderr.write("{} get_pk_fields({})\n".format(8*'=', oid))
@@ -129,9 +140,7 @@ SELECT
     n.nspname::varchar AS schemaname,
     c.relname::varchar AS relationname,
 	array_agg(distinct i.inhparent) as parent,
-    array_agg(a.attname::varchar) AS fieldnames,
-	array_agg(a.attnum) as attnums,
-    array_agg(a.attislocal) AS local,
+    array_agg(distinct a.attname::varchar) AS fieldnames,
     cn_pk.contype AS pkey
 FROM
     pg_class c -- table
@@ -143,8 +152,8 @@ FROM
     i.inhrelid = c.oid
     LEFT JOIN pg_attribute a ON
     a.attrelid = c.oid
-    JOIN pg_type pt ON
-    a.atttypid = pt.oid
+--    JOIN pg_type pt ON
+--    a.atttypid = pt.oid
 --    LEFT JOIN pg_constraint cn_uniq ON
 --    cn_uniq.contype = 'u' AND
 --    cn_uniq.conrelid = a.attrelid AND
@@ -164,9 +173,8 @@ GROUP BY
     c.relname,
     cn_pk.contype""".format(relname, schemaname))[0]['fieldnames']
 fqtn = "{}.{}".format(schemaname, relname)
-return [fqtn] + l_fieldnames
-fieldnames = ','.join(l_fieldnames)
-resultat = fqtn + ":" + fieldnames
-stderr.write("{}\n".format(resultat))
-return resultat
+res = [fqtn] + list(set(l_fieldnames))
+stderr.write("pk_fields: {}\n".format(res))
+stderr.write("get_pk_fields duration: {}\n".format(datetime.now() - begin))
+return res
 $$ LANGUAGE plpythonu;
