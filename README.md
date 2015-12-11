@@ -8,3 +8,5 @@ Don't use it on tables with heavy insert/update.
 Look a tables.sql to see howto use the trigger.
 
 The test.sh shell program drops and creates a database oopg.
+
+Keywords: postgresql, inheritance, plpython, trigger
