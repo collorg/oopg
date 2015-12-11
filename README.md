@@ -5,8 +5,8 @@ Don't use it on tables with heavy insert/update.
 
 <img src="https://github.com/collorg/oopg/blob/master/hello.png">
 
-Look a tables.sql to see howto use the trigger.
+Look a tables.sql to see how to use the trigger.
 
-The test.sh shell program drops and creates a database oopg.
+**WARNING**! The test.sh shell program drops and creates a database named oopg.
 
-Keywords: postgresql, inheritance, plpython, trigger
+**Keywords**: postgresql, inheritance, plpython, trigger
