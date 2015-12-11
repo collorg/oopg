@@ -1,0 +1,33 @@
+create table parent_a(
+   a text primary key
+);
+
+create trigger check_pk
+    before insert or update on parent_a
+    for each row execute procedure check_pk();
+
+create table parent_b(
+   b text primary key
+);
+
+create trigger check_pk
+    before insert or update on parent_b
+    for each row execute procedure check_pk();
+
+create table child_c(
+   c text,
+   primary key(a, b, c)
+) inherits(parent_a, parent_b);
+
+create trigger check_pk
+    before insert or update on child_c
+    for each row execute procedure check_pk();
+
+create table child_d(
+   d text,
+   primary key(a, b, d)
+) inherits(parent_a, parent_b);
+
+create trigger check_pk
+    before insert or update on child_d
+    for each row execute procedure check_pk();

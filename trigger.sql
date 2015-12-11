@@ -37,14 +37,15 @@ oid = args[0]
 stderr.write("{} check_pk_oid({})\n".format(8*'=', oid))
 TD = GD['td']
 stderr.write("GD['td'] = {}\n".format(TD))
-parent_oid = plpy.execute(
+parent_oids = plpy.execute(
     "SELECT get_inhparent('{}')".format(oid))[0]['get_inhparent']
-stderr.write("oid du parent {}\n".format(parent_oid))
-if parent_oid:
+stderr.write("oid du parent {}\n".format(parent_oids))
+for parent_oid in parent_oids:
    # recurse on parent_oid
    query = ("SELECT check_pk_oid({})".format(parent_oid))
    stderr.write("check uid request: {}\n".format(query))
-   return plpy.execute(query)[0]['check_pk_oid']
+   if not plpy.execute(query)[0]['check_pk_oid']:
+      return False
 # Get the FQTN and the field names of the primary key
 pk_infos = plpy.execute(
    "SELECT get_pk_fields({})".format(oid))[0]['get_pk_fields']
@@ -84,7 +85,7 @@ $$ LANGUAGE plpythonu;
 --
 
 CREATE FUNCTION get_inhparent(integer)
-    RETURNS integer
+    RETURNS integer[]
 AS $$
 from sys import stderr
 relid = args[0]
@@ -94,10 +95,10 @@ query = (
     relid))
 stderr.write('get_inhparent: {}\n'.format(query))
 rec = plpy.execute(query)
-try:
-   return rec[0]['inhparent']
-except:
-   return 0
+res = []
+if len(rec):
+  res = [elt['inhparent'] for elt in rec]
+return res
 $$ LANGUAGE plpythonu;
 
 --
@@ -115,7 +116,7 @@ oid = args[0]
 stderr.write("{} get_pk_fields({})\n".format(8*'=', oid))
 # rec_st : record contenant schemaname et relname
 rec_st = plpy.execute(
-   """SELECT schemaname, relname 
+   """SELECT schemaname, relname
       FROM pg_catalog.pg_stat_all_tables
       WHERE relid = {}""".format(oid))
 schemaname = rec_st[0]['schemaname']
@@ -169,41 +170,3 @@ resultat = fqtn + ":" + fieldnames
 stderr.write("{}\n".format(resultat))
 return resultat
 $$ LANGUAGE plpythonu;
-
-------
------- usage
-------
-
-create table parent(
-   a text primary key
-);
-
-create trigger check_pk
-    before insert or update on parent
-    for each row execute procedure check_pk();
-
---
---
---
-
-create table childb(
-   b text,
-   primary key(a, b)
-) inherits(parent);
-
-create trigger check_pk
-    before insert or update on childb
-    for each row execute procedure check_pk();
-
---
---
---
-
-create table childc(
-   c text,
-   primary key(a, c)
-) inherits(parent);
-
-create trigger check_pk
-    before insert or update on childc
-    for each row execute procedure check_pk();
