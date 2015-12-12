@@ -2,7 +2,9 @@
 
 dropdb oopg
 createdb oopg
-psql oopg -f trigger.sql
+psql oopg -c "create language plpythonu"
+
+psql oopg -f check_unicity_trigger.sql
 psql oopg -f tables.sql
 echo -n "OK "
 psql oopg -c "insert into parent_a (r, a) values ('a', 'a')"         # OK
@@ -20,7 +22,13 @@ psql oopg -c "insert into child_c (r, a, b, c) values ('c', 'c', 'c', 'c')" # OK
 psql oopg -c "insert into child_d (r, a, b, d) values ('c', 'c', 'c', 'd')" # FAILS
 psql oopg -c "insert into child_d (r, a, b, d) values ('c', 'd', 'd', 'd')" # FAILS
 psql oopg -c "insert into child_d (r, a, b, d) values ('c', 'd', 'd', 'd')" # FAILS
-psql oopg -c "insert into child_d (r, a, b, d) values ('d', 'd', 'd', 'd')" # FAILS
+echo -n "OK "
+psql oopg -c "insert into child_d (r, a, b, d) values ('d', 'd', 'd', 'd')" # OK
+
+# check unicity
+psql oopg -c "insert into grand_child_d (r, a, b, d, e) values ('e', 'e', 'e', 'd', 'e')" # FAILS
+echo -n "OK "
+psql oopg -c "insert into grand_child_d (r, a, b, d, e) values ('e', 'e', 'e', 'e', 'e')" # OK
 
 psql oopg -c "insert into parent_a (r, a) values ('c', 'd')"         # FAILS
 
@@ -34,4 +42,4 @@ psql oopg -c "update parent_a set a = 'b' where a = '%'"     # FAILS
 psql oopg -c "update parent_a set a = 'b'"                   # OK (update only parent_a)
 
 psql oopg -c "update child_d set a = 'c'"                   # FAILS (child_c)
-psql oopg -c "update child_d set a = 'e'"                   # OK
+psql oopg -c "update child_d set a = 'f'"                   # OK
