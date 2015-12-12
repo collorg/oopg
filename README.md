@@ -1,4 +1,4 @@
-# A PostgreSQL plpython trigger to insure unicity constraint with table inheritance
+# A plpython trigger to insure unicity constraint with PostgreSQL table inheritance
 
 This is an attempt to check unicity constraints in a graph of inheritance by means of a trigger. The trigger is written in plpython and is relatively slow (> 50 ms by insert or update).
 Do not use it on tables with heavy insert/update.
