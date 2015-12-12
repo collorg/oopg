@@ -21,7 +21,7 @@ from datetime import datetime
 begin = datetime.now()
 from sys import stderr
 
-trace = True
+trace = False
 
 def log(message):
     stderr.write(message)
