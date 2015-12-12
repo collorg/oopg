@@ -1,180 +1,114 @@
 create language plpythonu;
 
---
---
---
-
 CREATE FUNCTION check_pk()
     RETURNS trigger
 AS $$
 from datetime import datetime
 begin = datetime.now()
 from sys import stderr
+trace = False
+def log(message):
+    stderr.write(message)
 
-oid = TD['relid']
-GD['td'] = TD
-ok = plpy.execute(
-	"SELECT check_pk_oid({})".format(oid))[0]['check_pk_oid']
-stderr.write("check_pk duration: {}\n".format(datetime.now() - begin))
+def get_pk_fields(oid):
+    """
+    Return the field names in the primary key
+    """
+    trace and log("{} get_pk_fields({})\n".format(8*'=', oid))
+    l_fieldnames = plpy.execute("""
+    SELECT
+        array_agg(distinct a.attname::varchar) AS fieldnames,
+        cn_pk.contype AS pkey
+    FROM
+        pg_class c -- table
+        LEFT JOIN pg_attribute a ON
+        a.attrelid = c.oid and
+        c.oid = {}
+    --    JOIN pg_type pt ON
+    --    a.atttypid = pt.oid
+    --    LEFT JOIN pg_constraint cn_uniq ON
+    --    cn_uniq.contype = 'u' AND
+    --    cn_uniq.conrelid = a.attrelid AND
+    --    a.attnum = ANY( cn_uniq.conkey )
+        JOIN pg_constraint cn_pk ON
+        cn_pk.contype = 'p' AND
+        cn_pk.conrelid = a.attrelid AND
+        a.attnum = ANY( cn_pk.conkey )
+    WHERE
+        c.relkind = 'r'::"char"
+    GROUP BY
+        cn_pk.contype""".format(oid))[0]['fieldnames']
+    trace and log("pk_fields: {}\n".format(l_fieldnames))
+    trace and log("get_pk_fields duration: {}\n".format(datetime.now() - begin))
+    return set(l_fieldnames)
+
+def get_parents(relid):
+    """Return the list of the oids if any of the parents."""
+    trace and log("{} get_parents({})\n".format(8*'=', relid))
+    query = (
+        "SELECT inhparent FROM pg_catalog.pg_inherits "
+        "WHERE inhrelid = {}".format(relid))
+    trace and log('get_parents: {}\n'.format(query))
+    rec = plpy.execute(query)
+    res = []
+    if len(rec):
+        res = [elt['inhparent'] for elt in rec]
+    trace and log("get_parents duration: {}\n".format(datetime.now() - begin))
+    return res
+
+def check_pk_oid(oid):
+    """Return False if the key is found in any of the parents."""
+    from psycopg2.extensions import adapt
+
+    trace and log("{} check_pk_oid({})\n".format(8*'=', oid))
+    parent_oids = get_parents(oid)
+    trace and log("oid du parent {}\n".format(parent_oids))
+    for parent_oid in parent_oids:
+        # recurse on parent_oid
+        if not check_pk_oid(parent_oid):
+            return False
+    pk_fieldnames = get_pk_fields(oid)
+    if not pk_fieldnames:
+        trace and log(
+            "check_pk_oid duration ok 1: {}\n".format(datetime.now() - begin))
+        return True
+
+    # Clause for the SELECT request
+    clause = []
+    for field in pk_fieldnames:
+        if TD['old'] is not None:
+            if TD['old'][field] == TD['new'][field]:
+                continue
+        if TD['new'][field] == 0:
+            valeur = 0
+        else:
+            valeur = TD['new'][field] or ""
+            valeur = adapt(valeur)
+        clause.append("{} = {}".format(field, str(valeur)))
+
+    if not clause:
+        trace and log("NOTHING HAS CHANGED!\n")
+        return True
+    # FQTN: fully qualified table name (in the database)
+    rec_fqtn = plpy.execute("""
+        SELECT schemaname, relname
+        FROM pg_catalog.pg_stat_all_tables
+        WHERE relid = {}""".format(oid))[0]
+    fqtn = "{}.{}".format(rec_fqtn['schemaname'], rec_fqtn['relname'])
+    req = "SELECT 1 FROM {} WHERE {} limit 1".format(fqtn, ' and '.join(clause))
+    trace and log("check_pk_oid: {}\n".format(req))
+    if len(plpy.execute(req)) == 1:
+        trace and log("DUPLICATE KEY\n")
+        trace and log(
+            "check_pk_oid duration: {}\n".format(datetime.now() - begin))
+        return False
+
+    trace and log(
+        "check_pk_oid duration ok 2: {}\n".format(datetime.now() - begin))
+    return True
+
+ok = check_pk_oid(TD['relid'])
+trace and log("check_pk duration: {}\n".format(datetime.now() - begin))
 if not ok:
     return 'SKIP'
-$$ LANGUAGE plpythonu;
-
---
---
---
-
-CREATE FUNCTION check_pk_oid(integer)
-  returns boolean
-AS $$
-"""Return False if the key is found in any of the parents."""
-from datetime import datetime
-begin = datetime.now()
-from sys import stderr
-from psycopg2.extensions import adapt
-
-oid = args[0]
-stderr.write("{} check_pk_oid({})\n".format(8*'=', oid))
-TD = GD['td']
-stderr.write("GD['td'] = {}\n".format(TD))
-parent_oids = plpy.execute(
-    "SELECT get_parents('{}')".format(oid))[0]['get_parents']
-stderr.write("oid du parent {}\n".format(parent_oids))
-for parent_oid in parent_oids:
-   # recurse on parent_oid
-   query = ("SELECT check_pk_oid({})".format(parent_oid))
-   stderr.write("check uid request: {}\n".format(query))
-   if not plpy.execute(query)[0]['check_pk_oid']:
-      return False
-# Get the FQTN and the field names of the primary key
-pk_infos = plpy.execute(
-   "SELECT get_pk_fields({})".format(oid))[0]['get_pk_fields']
-fqtn, pk_fieldnames = pk_infos[0], pk_infos[1:]
-if not pk_fieldnames:
-   stderr.write(
-       "check_pk_oid duration ok 1: {}\n".format(datetime.now() - begin))
-   return True
-
-# Clause for the SELECT request
-fields = []
-clause = []
-for field in pk_fieldnames:
-   if GD['td']['old'] is not None:
-       if GD['td']['old'][field] == GD['td']['new'][field]:
-           continue
-   fields.append(field)
-   if TD['new'][field] == 0:
-     valeur = 0
-   else:
-     valeur = TD['new'][field] or ""
-     valeur = adapt(valeur)
-   clause.append("{} = {}".format(field, str(valeur)))
-
-if not clause:
-    stderr.write("NOTHING CHANGED!\n")
-    return True
-# construction de la requête d''extraction
-req = "SELECT {} FROM {} WHERE {} limit 1".format(
-	', '.join(fields), fqtn, ' and '.join(clause))
-stderr.write("check_pk_oid: {}\n".format(req))
-if len(plpy.execute(req)) == 1:
-    stderr.write("DUPLICATE KEY\n")
-    stderr.write("check_pk_oid duration: {}\n".format(datetime.now() - begin))
-    return False
-
-stderr.write("check_pk_oid duration ok 2: {}\n".format(datetime.now() - begin))
-return True
-$$ LANGUAGE plpythonu;
-
---
---
---
-
-CREATE FUNCTION get_parents(integer)
-    RETURNS integer[]
-AS $$
-from datetime import datetime
-begin = datetime.now()
-from sys import stderr
-relid = args[0]
-stderr.write("{} get_parents({})\n".format(8*'=', relid))
-query = (
-    "SELECT inhparent FROM pg_catalog.pg_inherits WHERE inhrelid = {}".format(
-    relid))
-stderr.write('get_parents: {}\n'.format(query))
-rec = plpy.execute(query)
-res = []
-if len(rec):
-  res = [elt['inhparent'] for elt in rec]
-stderr.write("get_parents duration: {}\n".format(datetime.now() - begin))
-return res
-$$ LANGUAGE plpythonu;
-
---
---
---
-
-CREATE FUNCTION get_pk_fields(oid)
-    RETURNS varchar[]
-AS $$
-"""
-Return the field names in the primary key
-"""
-from datetime import datetime
-begin = datetime.now()
-from sys import stderr
-oid = args[0]
-stderr.write("{} get_pk_fields({})\n".format(8*'=', oid))
-# rec_st : record contenant schemaname et relname
-rec_st = plpy.execute(
-   """SELECT schemaname, relname
-      FROM pg_catalog.pg_stat_all_tables
-      WHERE relid = {}""".format(oid))
-schemaname = rec_st[0]['schemaname']
-relname = rec_st[0]['relname']
-l_fieldnames = plpy.execute(
-   """
-SELECT
-    a.attrelid AS tableid,
-    c.relkind AS tablekind,
-    n.nspname::varchar AS schemaname,
-    c.relname::varchar AS relationname,
-	array_agg(distinct i.inhparent) as parent,
-    array_agg(distinct a.attname::varchar) AS fieldnames,
-    cn_pk.contype AS pkey
-FROM
-    pg_class c -- table
-    LEFT JOIN pg_namespace n ON
-    c.relname = '{}' and
-    n.oid = c.relnamespace and
-    n.nspname = '{}'
-    LEFT JOIN pg_inherits i ON
-    i.inhrelid = c.oid
-    LEFT JOIN pg_attribute a ON
-    a.attrelid = c.oid
---    JOIN pg_type pt ON
---    a.atttypid = pt.oid
---    LEFT JOIN pg_constraint cn_uniq ON
---    cn_uniq.contype = 'u' AND
---    cn_uniq.conrelid = a.attrelid AND
---    a.attnum = ANY( cn_uniq.conkey )
-    JOIN pg_constraint cn_pk ON
-    cn_pk.contype = 'p' AND
-    cn_pk.conrelid = a.attrelid AND
-    a.attnum = ANY( cn_pk.conkey )
-WHERE
-    n.nspname <> 'pg_catalog'::name AND
-    n.nspname <> 'information_schema'::name AND
-    ( c.relkind = 'r'::"char" )
-GROUP BY
-    a.attrelid,
-    c.relkind,
-    n.nspname,
-    c.relname,
-    cn_pk.contype""".format(relname, schemaname))[0]['fieldnames']
-fqtn = "{}.{}".format(schemaname, relname)
-res = [fqtn] + list(set(l_fieldnames))
-stderr.write("pk_fields: {}\n".format(res))
-stderr.write("get_pk_fields duration: {}\n".format(datetime.now() - begin))
-return res
 $$ LANGUAGE plpythonu;
