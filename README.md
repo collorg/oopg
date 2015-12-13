@@ -5,7 +5,7 @@ means of a trigger. The trigger is written in `plpython` and is relatively slow
 (> 50 ms by insert or update).
 Do not use it on tables with heavy insert/update.
 
-<img src="https://github.com/collorg/oopg/blob/master/hello.png">
+<img src="https://github.com/collorg/oopg/blob/master/datastruct.png">
 Data structure used for the test.
 
 ## Dependencies
