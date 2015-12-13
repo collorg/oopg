@@ -30,6 +30,9 @@ psql oopg -c "insert into child_d (r, a, b, d) values ('d', 'd', 'd', 'd')" # OK
 psql oopg -c "insert into grand_child_d (r, a, b, d, e) values ('e', 'e', 'e', 'd', 'e')" # FAILS
 echo -n "OK "
 psql oopg -c "insert into grand_child_d (r, a, b, d, e) values ('e', 'e', 'e', 'e', 'e')" # OK
+psql oopg -c "insert into grand_child_d (r, a, b, d, e) values ('f', 'e', 'e', 'e', 'f')" # FAILS
+psql oopg -c "insert into grand_child_d (r, a, b, d, e) values ('f', 'f', 'e', 'f', 'f')" # FAILS
+psql oopg -c "insert into grand_child_d (r, a, b, d, e) values ('f', 'f', 'f', 'e', 'f')" # FAILS
 
 psql oopg -c "insert into parent_a (r, a) values ('c', 'd')"         # FAILS
 

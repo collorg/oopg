@@ -16,8 +16,8 @@ create trigger check_unicity
     for each row execute procedure check_unicity();
 
 create table parent_b(
-   b text,
-   primary key(r, b)
+   b text unique,
+   unique(r, b)
 ) inherits(root);
 
 create trigger check_unicity
@@ -25,8 +25,7 @@ create trigger check_unicity
     for each row execute procedure check_unicity();
 
 create table child_c(
-   c text,
-   primary key(r, a, b, c)
+   c text
 ) inherits(parent_a, parent_b);
 
 create trigger check_unicity
@@ -35,7 +34,7 @@ create trigger check_unicity
 
 create table child_d(
    d text unique,
-   primary key(r, a, b, d)
+   primary key(a, b, d)
 ) inherits(parent_a, parent_b);
 
 create trigger check_unicity

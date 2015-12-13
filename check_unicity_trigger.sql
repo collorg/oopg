@@ -135,4 +135,4 @@ if not ok:
         '{}.{}\n'.format(
             TD['new'], TD['event'], TD['table_schema'], TD['table_name']))
     return 'SKIP'
-$$ LANGUAGE plpythonu;
+$$ language plpythonu volatile;
