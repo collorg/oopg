@@ -24,7 +24,7 @@ import psycopg2
 from psycopg2.extensions import adapt
 from sys import stderr
 
-trace = False
+trace = True
 
 def log(message):
     stderr.write(message)
@@ -85,6 +85,7 @@ def check_pk_oid(oid):
             return False
     ok = True
     for pk_fieldnames in get_pk_fields(oid):
+        null = True
         if not pk_fieldnames:
             trace and log(
                 "check_pk_oid duration ok 1: {}\n".format(
@@ -102,9 +103,12 @@ def check_pk_oid(oid):
             if isinstance(valeur, psycopg2.extensions.NoneAdapter):
                 valeur = 'NULL'
             else:
+                null = False
                 valeur = str(valeur)
             clause.append("{} = {}".format(field, valeur))
-
+        if null:
+            trace and log("NULL constraint!\n")
+            continue
         if not clause:
             trace and log("No change on constraint!\n")
             continue
@@ -116,6 +120,7 @@ def check_pk_oid(oid):
         fqtn = '"{}"."{}"'.format(rec_fqtn['schemaname'], rec_fqtn['relname'])
         req = "SELECT 1 FROM {} WHERE {} limit 1".format(
             fqtn, ' and '.join(clause))
+        trace and log("null constraint: {}\n".format(null))
         trace and log("check_pk_oid: {}\n".format(req))
         if len(plpy.execute(req)) == 1:
             trace and log("DUPLICATE KEY\n")

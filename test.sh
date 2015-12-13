@@ -13,10 +13,15 @@ psql oopg -c "insert into parent_a (r, a) values ('a', 'a')"         # OK
 psql oopg -c "insert into parent_b (r, b) values ('a', 'b')"         # FAILS
 echo -n "OK "
 psql oopg -c "insert into parent_b (r, b) values ('b', 'b')"         # OK
+echo -n "OK "
+psql oopg -c "insert into parent_b (r, b) values ('b1', null)"         # OK
+echo -n "OK "
+psql oopg -c "insert into parent_b (r, b) values ('b2', null)"         # OK
 
-psql oopg -c "insert into child_c (r, a, b, c) values ('a', 'a', 'c', 'c')"
-psql oopg -c "insert into child_c (r, a, b, c) values ('a', 'c', 'c', 'c')" # FAILS
-psql oopg -c "insert into child_c (r, a, b, c) values ('a', 'c', 'b', 'c')" # FAILS
+psql oopg -c "insert into child_c (r, a, b, c) values ('a', 'a', 'c', 'c')" # FAILS (r, a)pk
+psql oopg -c "insert into child_c (r, a, b, c) values ('a', 'c', 'c', 'c')" # FAILS (r)pk
+psql oopg -c "insert into child_c (r, a, b, c) values ('b', 'c', 'b', 'c')" # FAILS ()
+psql oopg -c "insert into child_c (r, a, b, c) values ('b1', 'c', null, 'c')" # FAILS ()
 echo -n "OK "
 psql oopg -c "insert into child_c (r, a, b, c) values ('c', 'c', 'c', 'c')" # OK
 
@@ -33,6 +38,9 @@ psql oopg -c "insert into grand_child_d (r, a, b, d, e) values ('e', 'e', 'e', '
 psql oopg -c "insert into grand_child_d (r, a, b, d, e) values ('f', 'e', 'e', 'e', 'f')" # FAILS
 psql oopg -c "insert into grand_child_d (r, a, b, d, e) values ('f', 'f', 'e', 'f', 'f')" # FAILS
 psql oopg -c "insert into grand_child_d (r, a, b, d, e) values ('f', 'f', 'f', 'e', 'f')" # FAILS
+echo -n "OK "
+psql oopg -c "insert into grand_child_d (r, a, b, d, e) values ('gc1', 'x', 'x', 'x', 'gc1')" # OK
+psql oopg -c "insert into grand_child_d (r, a, b, d, e) values ('gc2', 'x', 'x', 'x', 'gc1')" # FAILS (a, b, d)unique
 
 psql oopg -c "insert into parent_a (r, a) values ('c', 'd')"         # FAILS
 
