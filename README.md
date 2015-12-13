@@ -1,12 +1,13 @@
-# A plpython trigger to insure unicity constraint with PostgreSQL table inheritance
+# A plpython trigger to insure unique constraint with PostgreSQL table inheritance
 
-This is an attempt to check unicity constraints in a graph of inheritance by
+This is an attempt to check unique constraints in a graph of inheritance by
 means of a trigger. The trigger is written in `plpython` and is relatively slow
 (> 50 ms by insert or update).
-Do not use it on tables with heavy insert/update.
+
+THE TRIGGER DOESN'T WORK WITH UPDATE...
 
 <img src="https://github.com/collorg/oopg/blob/master/datastruct.png">
-Data structure used for the test.
+The database structure used to test the trigger.
 
 ## Dependencies
 * The trigger requires [psycopg2](http://initd.org/psycopg/) Python module.
@@ -18,8 +19,6 @@ Data structure used for the test.
 be a little faster with `plpythonu`. If you want to use it with `plpython3u`,
 just replace `plpythonu` by `plpython3u` at the end of
 `check_unicity_trigger.sql`.
-* If a table `child` inherits a table `parent`, the primary key of `child`
-must be at least the primary key of `parent`.
 
 **WARNING!** The `test.sh` shell program **drops** and recreates a database
 named **oopg** (who knows ;).

@@ -14,7 +14,7 @@
 -- along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 
-CREATE FUNCTION check_unicity()
+CREATE FUNCTION check_unique_constraint()
     RETURNS trigger
 AS $$
 from datetime import datetime
@@ -25,6 +25,7 @@ from psycopg2.extensions import adapt
 from sys import stderr
 
 trace = True
+d_error = {}
 
 def log(message):
     stderr.write(message)
@@ -72,40 +73,43 @@ def get_parents(relid):
     trace and log("get_parents duration: {}\n".format(datetime.now() - begin))
     return res
 
-def check_pk_oid(oid):
+def check_uc_oid(oid):
     """Return False if the key is found in any of the parents, True otherwise.
     """
 
-    trace and log("{} check_pk_oid({})\n".format(8*'=', oid))
+    trace and log("{} check_uc_oid({})\n".format(8*'=', oid))
     parent_oids = get_parents(oid)
     trace and log("oid du parent {}\n".format(parent_oids))
+    ok = True
     for parent_oid in parent_oids:
         # recurse on parent_oid
-        if not check_pk_oid(parent_oid):
+        if not check_uc_oid(parent_oid):
+            ok = False
             return False
-    ok = True
     for pk_fieldnames in get_pk_fields(oid):
         null = True
         if not pk_fieldnames:
             trace and log(
-                "check_pk_oid duration ok 1: {}\n".format(
+                "check_uc_oid duration ok 1: {}\n".format(
                     datetime.now() - begin))
             continue
 
         # Clause for the SELECT request
         clause = []
+        d_fv = {}
         for field in pk_fieldnames:
             if TD['old'] is not None:
                 if TD['old'][field] == TD['new'][field]:
                     continue
-            valeur = TD['new'][field]
-            valeur = adapt(valeur)
-            if isinstance(valeur, psycopg2.extensions.NoneAdapter):
-                valeur = 'NULL'
+            value = TD['new'][field]
+            d_fv[field] = str(value)
+            value = adapt(value)
+            if isinstance(value, psycopg2.extensions.NoneAdapter):
+                value = 'NULL'
             else:
                 null = False
-                valeur = str(valeur)
-            clause.append("{} = {}".format(field, valeur))
+                value = str(value)
+            clause.append("{} = {}".format(field, value))
         if null:
             trace and log("NULL constraint!\n")
             continue
@@ -114,30 +118,34 @@ def check_pk_oid(oid):
             continue
         # FQTN: fully qualified table name (in the database)
         rec_fqtn = plpy.execute("""
-            SELECT schemaname, relname
-            FROM pg_catalog.pg_stat_all_tables
-            WHERE relid = {}""".format(oid))[0]
+            select schemaname, relname
+            from pg_catalog.pg_stat_all_tables
+            where relid = {}""".format(oid))[0]
         fqtn = '"{}"."{}"'.format(rec_fqtn['schemaname'], rec_fqtn['relname'])
-        req = "SELECT 1 FROM {} WHERE {} limit 1".format(
+        req = "select count(*) FROM {} WHERE {} limit 1".format(
             fqtn, ' and '.join(clause))
         trace and log("null constraint: {}\n".format(null))
-        trace and log("check_pk_oid: {}\n".format(req))
-        if len(plpy.execute(req)) == 1:
+        trace and log("check_uc_oid: {}\n".format(req))
+        res = plpy.execute(req)[0]['count']
+        if res != 0:
             trace and log("DUPLICATE KEY\n")
             trace and log(
-                "check_pk_oid duration: {}\n".format(datetime.now() - begin))
-            ok = False
-            break
+                "check_uc_oid duration: {}\n".format(datetime.now() - begin))
+            d_error['fqtn'] = str(fqtn)
+            d_error['values'] = d_fv
+            return False
 
         trace and log(
-            "check_pk_oid duration ok 2: {}\n".format(datetime.now() - begin))
+            "check_uc_oid duration ok 2: {}\n".format(datetime.now() - begin))
     return ok
 
-ok = check_pk_oid(TD['relid'])
+log("{}\n{}\n{}\n".format(80*"=", TD, 80*"-"))
+ok = check_uc_oid(TD['relid'])
 trace and log("check_pk duration: {}\n".format(datetime.now() - begin))
 if not ok:
-    stderr.write('oopg check_unicity: duplicate key {} during {} on '
-        '{}.{}\n'.format(
-            TD['new'], TD['event'], TD['table_schema'], TD['table_name']))
+    stderr.write('oopg check_unique: duplicate key {} during {} on '
+        '{}.{}\nFound {} in {}\n'.format(
+            TD['new'], TD['event'], TD['table_schema'], TD['table_name'],
+            d_error['values'], d_error['fqtn']))
     return 'SKIP'
 $$ language plpythonu volatile;
