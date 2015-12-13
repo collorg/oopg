@@ -19,6 +19,9 @@ CREATE FUNCTION check_unicity()
 AS $$
 from datetime import datetime
 begin = datetime.now()
+
+import psycopg2
+from psycopg2.extensions import adapt
 from sys import stderr
 
 trace = False
@@ -72,7 +75,6 @@ def get_parents(relid):
 def check_pk_oid(oid):
     """Return False if the key is found in any of the parents, True otherwise.
     """
-    from psycopg2.extensions import adapt
 
     trace and log("{} check_pk_oid({})\n".format(8*'=', oid))
     parent_oids = get_parents(oid)
@@ -95,12 +97,13 @@ def check_pk_oid(oid):
             if TD['old'] is not None:
                 if TD['old'][field] == TD['new'][field]:
                     continue
-            if TD['new'][field] == 0:
-                valeur = 0
+            valeur = TD['new'][field]
+            valeur = adapt(valeur)
+            if isinstance(valeur, psycopg2.extensions.NoneAdapter):
+                valeur = 'NULL'
             else:
-                valeur = TD['new'][field] or ""
-                valeur = adapt(valeur)
-            clause.append("{} = {}".format(field, str(valeur)))
+                valeur = str(valeur)
+            clause.append("{} = {}".format(field, valeur))
 
         if not clause:
             trace and log("No change on constraint!\n")
@@ -128,5 +131,8 @@ def check_pk_oid(oid):
 ok = check_pk_oid(TD['relid'])
 trace and log("check_pk duration: {}\n".format(datetime.now() - begin))
 if not ok:
+    stderr.write('oopg check_unicity: duplicate key {} during {} on '
+        '{}.{}\n'.format(
+            TD['new'], TD['event'], TD['table_schema'], TD['table_name']))
     return 'SKIP'
 $$ LANGUAGE plpythonu;

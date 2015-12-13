@@ -6,6 +6,7 @@ psql oopg -c "create language plpythonu"
 
 psql oopg -f check_unicity_trigger.sql
 psql oopg -f tables.sql
+psql oopg -c "insert into parent_a (r, a) values ('a', null)"         # FAILS
 echo -n "OK "
 psql oopg -c "insert into parent_a (r, a) values ('a', 'a')"         # OK
 
@@ -35,6 +36,7 @@ psql oopg -c "insert into parent_a (r, a) values ('c', 'd')"         # FAILS
 psql oopg -c "select * from root"       # {a, c, d}
 psql oopg -c "select * from parent_a"       # {a, c, d}
 psql oopg -c "select * from parent_b"       # {b, c, d}
+psql oopg -c "select * from child_d"
 
 # odd! when I update without constraint the update is confined to
 # the table on which it is executed (not the children)? hence:
