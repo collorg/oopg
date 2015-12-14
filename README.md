@@ -4,7 +4,12 @@ This is an attempt to check unique constraints in a graph of inheritance by
 means of a trigger. The trigger is written in `plpython` and is relatively slow
 (> 50 ms by insert or update).
 
-THE TRIGGER DOESN'T WORK WITH UPDATE...
+## Limitation
+THE TRIGGER DOESN'T WORK WITH UPDATE... It would require to count if more than one
+row is updated by the query and, in that case, if any attribute of a unique constraint
+is modified (new != old). If anyone can see a way to do this, let me know.
+
+If you can insure that only one row is modified at a time, the trigger should work.
 
 <img src="https://github.com/collorg/oopg/blob/master/datastruct.png">
 The database structure used to test the trigger.
