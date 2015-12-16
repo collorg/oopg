@@ -24,6 +24,7 @@ import psycopg2
 from psycopg2.extensions import adapt
 from sys import stderr
 
+abort = False
 trace = True
 d_error = {}
 
@@ -140,12 +141,15 @@ def check_uc_oid(oid):
     return ok
 
 log("{}\n{}\n{}\n".format(80*"=", TD, 80*"-"))
+if GD.get('skip'):
+    return 'SKIP'
 ok = check_uc_oid(TD['relid'])
 trace and log("check_pk duration: {}\n".format(datetime.now() - begin))
 if not ok:
+    GD['skip'] = True
     stderr.write('oopg check_unique: duplicate key {} during {} on '
         '{}.{}\nFound {} in {}\n'.format(
             TD['new'], TD['event'], TD['table_schema'], TD['table_name'],
             d_error['values'], d_error['fqtn']))
     return 'SKIP'
-$$ language plpythonu volatile;
+$$ language plpythonu;

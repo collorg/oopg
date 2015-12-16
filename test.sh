@@ -45,10 +45,9 @@ psql oopg -c "select * from parent_a"
 psql oopg -c "select * from parent_b"
 psql oopg -c "select * from child_d"
 
-# odd! when I update without constraint the update is confined to
-# the table on which it is executed (not the children)? hence:
+# UPDATE DOESN'T WORK. HOW TO DETERMINE THE NUMBER OF ROWS
 psql oopg -c "update parent_a set a = 'b' where a like '%'"     # FAILS
-#echo -n "OK "; psql oopg -c "update parent_a set a = 'b'"                   # OK (update only parent_a)
-#
-#psql oopg -c "update child_d set a = 'c'"                   # FAILS (child_c)
-#echo -n "OK "; psql oopg -c "update child_d set a = 'f'"                   # OK
+echo -n "OK "; psql oopg -c "update parent_a set a = 'b'"                   # OK (update only parent_a)
+
+psql oopg -c "update child_d set a = 'c'"                   # FAILS (child_c)
+echo -n "OK "; psql oopg -c "update child_d set a = 'f'"                   # OK
