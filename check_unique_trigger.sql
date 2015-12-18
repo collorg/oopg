@@ -20,12 +20,9 @@ AS $$
 from datetime import datetime
 begin = datetime.now()
 
-import psycopg2
-from psycopg2.extensions import adapt
 from sys import stderr
 
-abort = False
-trace = True
+trace = False
 d_error = {}
 
 def log(message):
@@ -103,14 +100,9 @@ def check_uc_oid(oid):
                 if TD['old'][field] == TD['new'][field]:
                     continue
             value = TD['new'][field]
-            d_fv[field] = str(value)
-            value = adapt(value)
-            if isinstance(value, psycopg2.extensions.NoneAdapter):
-                value = 'NULL'
-            else:
+            if value is not None:
                 null = False
-                value = str(value)
-            clause.append("{} = {}".format(field, value))
+            clause.append("{} = {}".format(field, plpy.quote_nullable(value)))
         if null:
             trace and log("NULL constraint!\n")
             continue
@@ -123,12 +115,11 @@ def check_uc_oid(oid):
             from pg_catalog.pg_stat_all_tables
             where relid = {}""".format(oid))[0]
         fqtn = '"{}"."{}"'.format(rec_fqtn['schemaname'], rec_fqtn['relname'])
-        req = "select count(*) FROM {} WHERE {} limit 1".format(
-            fqtn, ' and '.join(clause))
+        req = "select * FROM {} WHERE {}".format(fqtn, ' and '.join(clause), 1)
         trace and log("null constraint: {}\n".format(null))
         trace and log("check_uc_oid: {}\n".format(req))
-        res = plpy.execute(req)[0]['count']
-        if res != 0:
+        res = plpy.execute(req)
+        if len(res) == 1:
             trace and log("DUPLICATE KEY\n")
             trace and log(
                 "check_uc_oid duration: {}\n".format(datetime.now() - begin))
@@ -140,16 +131,20 @@ def check_uc_oid(oid):
             "check_uc_oid duration ok 2: {}\n".format(datetime.now() - begin))
     return ok
 
-log("{}\n{}\n{}\n".format(80*"=", TD, 80*"-"))
+#log("{}\n{}\n{}\n".format(80*"=", TD, 80*"-"))
+cq = plpy.execute('select current_query()')[0]['current_query']
+#log('{}\n'.format(cq))
 if GD.get('skip'):
     return 'SKIP'
 ok = check_uc_oid(TD['relid'])
 trace and log("check_pk duration: {}\n".format(datetime.now() - begin))
 if not ok:
     GD['skip'] = True
-    stderr.write('oopg check_unique: duplicate key {} during {} on '
-        '{}.{}\nFound {} in {}\n'.format(
-            TD['new'], TD['event'], TD['table_schema'], TD['table_name'],
-            d_error['values'], d_error['fqtn']))
+    log('SKIP: {}\n'.format(cq))
+    #log('{}\n: duplicate key {} during {} on '
+    #    '{}.{}\nFound {} in {}\n'.format(
+    #        cq, TD['new'], TD['event'], TD['table_schema'], TD['table_name'],
+    #        d_error['values'], d_error['fqtn']))
     return 'SKIP'
+log('OK: {}\n'.format(cq))
 $$ language plpythonu;
